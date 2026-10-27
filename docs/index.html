@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yocto buildstats bar chart race - 20261020142538</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10141c; color: #e8edf5; }
+    body { margin: 0; padding: 28px; }
+    main { max-width: 1440px; margin: auto; }
+    h1 { margin: 0 0 6px; font-size: clamp(1.35rem, 3vw, 2rem); }
+    .subhead, .meta { color: #9eacc0; }
+    .meta { margin: 8px 0 20px; font-size: .9rem; }
+    .chart-layout { display: grid; grid-template-columns: minmax(0, 1fr) 155px; gap: 10px; align-items: start; }
+    .chart { min-width: 0; overflow: hidden; border: 1px solid #283244; border-radius: 14px; background: #151b26; }
+    svg { display: block; width: 100%; height: auto; }
+    .legend { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0; padding: 8px 0 8px 10px; border-left: 1px solid #283244; color: #c5d0df; font-size: .72rem; line-height: 1.1; }
+    .legend-title { color: #9eacc0; font-weight: 600; }
+    .legend-item { display: inline-flex; align-items: center; gap: 5px; padding: 3px 5px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: inherit; font: inherit; line-height: 1.1; text-align: left; cursor: pointer; }
+    .legend-item:hover, .legend-item:focus-visible { border-color: #60738f; background: #222c3a; outline: none; }
+    .legend-item[aria-pressed="true"] { border-color: #8ca6c8; background: #263448; }
+    .legend-swatch { flex: 0 0 10px; width: 10px; height: 10px; border-radius: 3px; }
+    .grid { stroke: #2a3445; stroke-width: 1; }
+    .axis-label { fill: #8f9db1; font-size: 13px; }
+    .task-label { fill: #e8edf5; font-size: 11px; }
+    .value-label { fill: #d8e1ed; font-size: 11px; font-variant-numeric: tabular-nums; }
+    .bar { rx: 5; }
+    .bar-row { transition: transform .22s ease, opacity .22s ease; }
+    .controls { display: flex; align-items: center; gap: 14px; margin: 18px 0 12px; }
+    button { border: 0; border-radius: 8px; padding: 9px 15px; background: #3b82f6; color: white; font: inherit; cursor: pointer; }
+    button:hover { background: #5594ff; }
+    input[type=range] { flex: 1; min-width: 100px; height: 18px; margin: 0; appearance: none; background: transparent; cursor: pointer; }
+    input[type=range]::-webkit-slider-runnable-track { height: 8px; border-radius: 999px; background: linear-gradient(to right, #60a5fa var(--progress), #2a3445 var(--progress)); }
+    input[type=range]::-moz-range-track { height: 8px; border-radius: 999px; background: #2a3445; }
+    input[type=range]::-moz-range-progress { height: 8px; border-radius: 999px; background: #60a5fa; }
+    input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -4px; appearance: none; border: 2px solid #e8edf5; border-radius: 50%; background: #3b82f6; }
+    input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 2px solid #e8edf5; border-radius: 50%; background: #3b82f6; }
+    .clock { min-width: 175px; text-align: right; font-variant-numeric: tabular-nums; color: #c5d0df; }
+    .note { color: #9eacc0; font-size: .9rem; line-height: 1.55; }
+    @media (max-width: 800px) {
+      .chart-layout { grid-template-columns: minmax(0, 1fr); }
+      .legend { flex-direction: row; flex-wrap: wrap; padding: 10px; border-left: 0; border-top: 1px solid #283244; }
+    }
+    @media (max-width: 650px) {
+      body { padding: 16px; }
+      .controls { flex-wrap: wrap; gap: 10px; }
+      input[type=range] { order: 3; flex-basis: 100%; }
+      .clock { margin-left: auto; }
+      .task-label { font-size: 10px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Yocto ビルド: 個別タスク時間レース</h1>
+  <div class="subhead">
+    各レシピの個別タスク実行時間を比較します。各バーは do_compile などのタスクです。実行中タスクは開始から完了まで線形補間して表示し、横軸は全タスク中の最長時間に固定しています。上位25件を表示します。ビルド: 20261020142538
+  </div>
+  <div class="meta" id="meta"></div>
+  <div class="controls">
+    <button id="toggle" type="button">再生</button>
+    <input id="timeline" type="range" min="0" step="any" value="0" aria-label="ビルド経過時間">
+    <div class="clock" id="clock"></div>
+  </div>
+  <div class="chart-layout">
+    <div class="chart">
+      <svg id="chart" viewBox="0 0 1100 650" role="img" aria-label="個別タスク実行時間のバーチャートレース"></svg>
+    </div>
+    <div class="legend" id="legend" aria-label="タスク種別の色凡例">
+      <span class="legend-title">タスク種別:</span>
+    </div>
+  </div>
+</main>
+<script>
+fetch("bar_chart_race.json")
+  .then(response => {
+    if (!response.ok) {
+      throw new Error(`データ読み込み失敗: HTTP ${response.status}`);
+    }
+    return response.json();
+  })
+  .then(DATA => {
+const events = DATA.events;
+const duration = DATA.metadata.duration;
+const taskTypes = [...new Set(events.map(event => event.task))].sort();
+const primaryTaskColors = new Map([
+  ["do_compile", { color: "#ff4d4f", hue: 0 }],
+  ["do_fetch", { color: "#13c2c2", hue: 180 }],
+  ["do_configure", { color: "#fadb14", hue: 52 }],
+  ["do_unpack", { color: "#52c41a", hue: 101 }],
+  ["do_install", { color: "#eb2f96", hue: 328 }],
+  ["do_populate_sysroot", { color: "#1677ff", hue: 214 }]
+]);
+const taskHues = new Map(taskTypes.flatMap(task => {
+  const primary = primaryTaskColors.get(task);
+  return primary ? [[task, primary.hue]] : [];
+}));
+const additionalTasks = taskTypes.filter(name => !taskHues.has(name));
+for (const [index, task] of additionalTasks.entries()) {
+  if (taskHues.size === 0) {
+    taskHues.set(task, Math.round(index * 360 / additionalTasks.length));
+    continue;
+  }
+  let bestHue = 0;
+  let bestDistance = -1;
+  for (let hue = 0; hue < 360; hue++) {
+    const distance = Math.min(...[...taskHues.values()].map(used => {
+      const difference = Math.abs(hue - used);
+      return Math.min(difference, 360 - difference);
+    }));
+    if (distance > bestDistance) {
+      bestHue = hue;
+      bestDistance = distance;
+    }
+  }
+  taskHues.set(task, bestHue);
+}
+const taskColors = new Map(taskTypes.map(task => [
+  task,
+  primaryTaskColors.get(task)?.color ?? `hsl(${taskHues.get(task)} 72% 58%)`
+]));
+taskTypes.sort((left, right) => taskHues.get(left) - taskHues.get(right));
+const finalTotals = new Map();
+const taskByKey = new Map();
+for (const event of events) {
+  const key = taskKey(event);
+  finalTotals.set(key, event.duration);
+  taskByKey.set(key, event);
+}
+const axisMax = Math.max(1, ...finalTotals.values());
+const svg = document.getElementById("chart");
+const slider = document.getElementById("timeline");
+const toggle = document.getElementById("toggle");
+const clock = document.getElementById("clock");
+const maxBars = 25;
+const plot = { left: 330, top: 53, width: 680, row: 22.5 };
+const ns = "http://www.w3.org/2000/svg";
+let selectedTask = null;
+slider.max = String(duration);
+const gridLayer = el("g", {});
+const barsLayer = el("g", {});
+const axisLabels = [];
+const barRows = new Map();
+for (let i = 0; i < 5; i++) {
+  const x = plot.left + (plot.width * i) / 4;
+  gridLayer.append(el("line", { x1: x, y1: 42, x2: x, y2: 622, class: "grid" }));
+  const label = el("text", { x, y: 32, "text-anchor": "middle", class: "axis-label" }, "0 秒");
+  axisLabels.push(label);
+  gridLayer.append(label);
+}
+svg.append(gridLayer, barsLayer);
+
+const statusSummary = Object.entries(DATA.metadata.statusCounts)
+  .map(([status, count]) => `${status} ${count}`).join(" / ");
+document.getElementById("meta").textContent =
+  `${DATA.metadata.taskCount.toLocaleString()} タスクを集計` +
+  (DATA.metadata.skippedCount ? `（記録なし ${DATA.metadata.skippedCount.toLocaleString()} 件を除外）` : "") +
+  (statusSummary ? ` ・ ${statusSummary}` : "");
+
+function formatTime(seconds) {
+  const value = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(value / 3600);
+  const minutes = Math.floor((value % 3600) / 60);
+  const secs = value % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function colorFor(name) {
+  return taskColors.get(name);
+}
+
+function taskKey(event) {
+  return `${event.recipeId}/${event.task}`;
+}
+
+function el(tag, attrs, text) {
+  const node = document.createElementNS(ns, tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+const legend = document.getElementById("legend");
+for (const task of taskTypes) {
+  const item = document.createElement("button");
+  item.className = "legend-item";
+  item.type = "button";
+  item.setAttribute("aria-pressed", "false");
+  item.setAttribute("aria-label", `${task} のバーを強調`);
+  const swatch = document.createElement("span");
+  swatch.className = "legend-swatch";
+  swatch.style.backgroundColor = colorFor(task);
+  item.append(swatch, document.createTextNode(task));
+  item.addEventListener("click", () => {
+    selectedTask = selectedTask === task ? null : task;
+    for (const legendItem of legend.querySelectorAll(".legend-item")) {
+      const selected = legendItem.textContent === selectedTask;
+      legendItem.setAttribute("aria-pressed", String(selected));
+      legendItem.setAttribute("aria-label", selected
+        ? `${selectedTask} の強調を解除`
+        : `${legendItem.textContent} のバーを強調`);
+    }
+    for (const row of barRows.values()) {
+      row.group.setAttribute("opacity", selectedTask && row.task !== selectedTask ? "0.14" : "1");
+    }
+  });
+  legend.append(item);
+}
+
+function draw(time) {
+  const totals = new Map();
+  for (const event of events) {
+    let contribution = 0;
+    if (time >= event.time) {
+      contribution = event.duration;
+    } else if (time > event.startTime && event.time > event.startTime) {
+      contribution = event.duration * (time - event.startTime) / (event.time - event.startTime);
+    }
+    if (contribution > 0) {
+      totals.set(taskKey(event), contribution);
+    }
+  }
+  const leaders = [...totals].sort((a, b) => b[1] - a[1]).slice(0, maxBars);
+  for (let i = 0; i < 5; i++) {
+    axisLabels[i].textContent = `${((axisMax * i) / 4).toFixed(0)} 秒`;
+  }
+  const visibleTasks = new Set(leaders.map(([key]) => key));
+  for (const [key, row] of barRows) {
+    if (!visibleTasks.has(key)) row.group.setAttribute("opacity", "0");
+  }
+  leaders.forEach(([key, value], index) => {
+    const event = taskByKey.get(key);
+    if (!event) throw new Error(`タスク情報が見つかりません: ${key}`);
+    const y = plot.top + index * plot.row;
+    const width = (value / axisMax) * plot.width;
+    let row = barRows.get(key);
+    if (!row) {
+      const group = el("g", { class: "bar-row", opacity: "0" });
+      const fullLabel = `${event.task} · ${event.recipe}`;
+      const labelText = fullLabel.length > 48 ? `${fullLabel.slice(0, 47)}…` : fullLabel;
+      const label = el("text", { x: plot.left - 12, y: 13, "text-anchor": "end", class: "task-label" }, labelText);
+      label.append(el("title", {}, `${event.recipeId} / ${event.task}`));
+      const bar = el("rect", { x: plot.left, y: 0, width: 0, height: 15, fill: colorFor(event.task), class: "bar" });
+      const amount = el("text", { x: plot.left + 9, y: 13, class: "value-label" }, "");
+      group.append(label, bar, amount);
+      barsLayer.append(group);
+      row = { group, bar, label, amount, task: event.task };
+      barRows.set(key, row);
+    }
+    row.group.setAttribute("transform", `translate(0 ${y})`);
+    row.group.setAttribute("opacity", selectedTask && event.task !== selectedTask ? "0.14" : "1");
+    row.bar.setAttribute("width", String(width));
+    row.amount.setAttribute("x", String(plot.left + width + 9));
+    row.amount.textContent = `${value.toFixed(1)} 秒`;
+  });
+  clock.textContent = `ビルド経過 ${formatTime(time)} / ${formatTime(duration)}`;
+  slider.value = String(time);
+  slider.style.setProperty("--progress", `${(time / duration) * 100}%`);
+  updateToggleLabel();
+}
+
+let playing = false;
+let animation;
+let previousFrame = 0;
+const playbackRate = duration / 45;
+function updateToggleLabel() {
+  toggle.textContent = playing ? "一時停止" : Number(slider.value) >= duration ? "リスタート" : "再生";
+}
+function frame(now) {
+  if (!playing) return;
+  if (!previousFrame) previousFrame = now;
+  const next = Number(slider.value) + ((now - previousFrame) / 1000) * playbackRate;
+  previousFrame = now;
+  if (next >= duration) {
+    setPlaying(false);
+    draw(duration);
+    return;
+  }
+  draw(next);
+  animation = requestAnimationFrame(frame);
+}
+function setPlaying(value) {
+  playing = value;
+  updateToggleLabel();
+  previousFrame = 0;
+  if (playing) animation = requestAnimationFrame(frame);
+  else if (animation) cancelAnimationFrame(animation);
+}
+toggle.addEventListener("click", () => {
+  if (playing) {
+    setPlaying(false);
+    return;
+  }
+  if (Number(slider.value) >= duration) draw(0);
+  setPlaying(true);
+});
+slider.addEventListener("input", () => {
+  if (playing) setPlaying(false);
+  draw(Number(slider.value));
+});
+draw(0);
+  })
+  .catch(error => {
+    console.error("バーチャートレースのデータ読み込みに失敗しました:", error);
+    document.getElementById("meta").textContent =
+      "グラフデータを読み込めません。HTTPサーバー経由で開き、JSONファイルを確認してください。";
+  });
+</script>
+</body>
+</html>
