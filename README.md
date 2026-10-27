@@ -21,3 +21,7 @@ gh buildstatus raw2json \
 ```
 
 実行には Python 3 が必要です。変換処理には `commands/bar-chart-race.py` を使用します。
+
+## 参考情報
+
+- [buildstatus バーレースチャート](https://kouji-sasaya.github.io/gh-buildstatus/)
