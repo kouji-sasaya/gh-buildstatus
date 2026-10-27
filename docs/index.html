@@ -54,7 +54,7 @@
 <main>
   <h1>Yocto ビルド: 個別タスク時間レース</h1>
   <div class="subhead">
-    各レシピの個別タスク実行時間を比較します。各バーは do_compile などのタスクです。実行中タスクは開始から完了まで線形補間して表示し、横軸は全タスク中の最長時間に固定しています。上位25件を表示します。ビルド: 20261020142538
+    各レシピの個別タスク実行時間を比較します。各バーは do_compile などのタスクです。実行中タスクは開始から完了まで線形補間して表示し、横軸は全タスク中の最長時間に固定しています。上位100件を表示します。ビルド: 20261020142538
   </div>
   <div class="meta" id="meta"></div>
   <div class="controls">
@@ -83,43 +83,10 @@ fetch("bar_chart_race.json")
 const events = DATA.events;
 const duration = DATA.metadata.duration;
 const taskTypes = [...new Set(events.map(event => event.task))].sort();
-const primaryTaskColors = new Map([
-  ["do_compile", { color: "#ff4d4f", hue: 0 }],
-  ["do_fetch", { color: "#13c2c2", hue: 180 }],
-  ["do_configure", { color: "#fadb14", hue: 52 }],
-  ["do_unpack", { color: "#52c41a", hue: 101 }],
-  ["do_install", { color: "#eb2f96", hue: 328 }],
-  ["do_populate_sysroot", { color: "#1677ff", hue: 214 }]
-]);
-const taskHues = new Map(taskTypes.flatMap(task => {
-  const primary = primaryTaskColors.get(task);
-  return primary ? [[task, primary.hue]] : [];
-}));
-const additionalTasks = taskTypes.filter(name => !taskHues.has(name));
-for (const [index, task] of additionalTasks.entries()) {
-  if (taskHues.size === 0) {
-    taskHues.set(task, Math.round(index * 360 / additionalTasks.length));
-    continue;
-  }
-  let bestHue = 0;
-  let bestDistance = -1;
-  for (let hue = 0; hue < 360; hue++) {
-    const distance = Math.min(...[...taskHues.values()].map(used => {
-      const difference = Math.abs(hue - used);
-      return Math.min(difference, 360 - difference);
-    }));
-    if (distance > bestDistance) {
-      bestHue = hue;
-      bestDistance = distance;
-    }
-  }
-  taskHues.set(task, bestHue);
-}
-const taskColors = new Map(taskTypes.map(task => [
+const taskColors = new Map(taskTypes.map((task, index) => [
   task,
-  primaryTaskColors.get(task)?.color ?? `hsl(${taskHues.get(task)} 72% 58%)`
+  `hsl(${taskTypes.length > 1 ? index * 300 / (taskTypes.length - 1) : 0} 72% 58%)`
 ]));
-taskTypes.sort((left, right) => taskHues.get(left) - taskHues.get(right));
 const finalTotals = new Map();
 const taskByKey = new Map();
 for (const event of events) {
@@ -132,10 +99,12 @@ const svg = document.getElementById("chart");
 const slider = document.getElementById("timeline");
 const toggle = document.getElementById("toggle");
 const clock = document.getElementById("clock");
-const maxBars = 25;
+const maxBars = 100;
 const plot = { left: 330, top: 53, width: 680, row: 22.5 };
+const chartHeight = plot.top + maxBars * plot.row + 30;
 const ns = "http://www.w3.org/2000/svg";
 let selectedTask = null;
+svg.setAttribute("viewBox", `0 0 1100 ${chartHeight}`);
 slider.max = String(duration);
 const gridLayer = el("g", {});
 const barsLayer = el("g", {});
@@ -143,7 +112,7 @@ const axisLabels = [];
 const barRows = new Map();
 for (let i = 0; i < 5; i++) {
   const x = plot.left + (plot.width * i) / 4;
-  gridLayer.append(el("line", { x1: x, y1: 42, x2: x, y2: 622, class: "grid" }));
+  gridLayer.append(el("line", { x1: x, y1: 42, x2: x, y2: chartHeight - 20, class: "grid" }));
   const label = el("text", { x, y: 32, "text-anchor": "middle", class: "axis-label" }, "0 秒");
   axisLabels.push(label);
   gridLayer.append(label);
