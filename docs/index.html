@@ -8,6 +8,12 @@
     :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10141c; color: #e8edf5; }
     body { margin: 0; padding: 28px; }
     main { max-width: 1440px; margin: auto; }
+    .title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .speed { display: flex; align-items: center; gap: 4px; }
+    .speed-label { color: #9eacc0; font-size: .8rem; margin-right: 4px; }
+    .speed button { min-width: 52px; padding: 5px 8px; font-size: .8rem; background: #263448; }
+    .speed button:hover { background: #33476a; }
+    .speed button[aria-pressed="true"] { background: #3b82f6; }
     h1 { margin: 0 0 6px; font-size: clamp(1.35rem, 3vw, 2rem); }
     .subhead, .meta { color: #9eacc0; }
     .meta { margin: 8px 0 20px; font-size: .9rem; }
@@ -62,7 +68,17 @@
 </head>
 <body>
 <main>
-  <h1>Yocto ビルド: 個別タスク時間レース</h1>
+  <div class="title-row">
+    <h1>Yocto ビルド: 個別タスク時間レース</h1>
+    <div class="speed" role="group" aria-label="再生速度">
+      <span class="speed-label">速度</span>
+      <button type="button" data-speed="0.25">x0.25</button>
+      <button type="button" data-speed="0.5">x0.5</button>
+      <button type="button" data-speed="1" aria-pressed="true">x1</button>
+      <button type="button" data-speed="2">x2</button>
+      <button type="button" data-speed="4">x4</button>
+    </div>
+  </div>
   <div class="meta" id="meta"></div>
   <div class="controls">
     <button id="toggle" type="button">再生</button>
@@ -412,14 +428,23 @@ async function loadMetrics() {
 let playing = false;
 let animation;
 let previousFrame = 0;
-const playbackRate = duration / 45;
+const baseRate = duration / 45;
+let speed = 1;
+for (const button of document.querySelectorAll(".speed button")) {
+  button.addEventListener("click", () => {
+    speed = Number(button.dataset.speed);
+    for (const other of document.querySelectorAll(".speed button")) {
+      other.setAttribute("aria-pressed", String(other === button));
+    }
+  });
+}
 function updateToggleLabel() {
   toggle.textContent = playing ? "一時停止" : Number(slider.value) >= duration ? "リスタート" : "再生";
 }
 function frame(now) {
   if (!playing) return;
   if (!previousFrame) previousFrame = now;
-  const next = Number(slider.value) + ((now - previousFrame) / 1000) * playbackRate;
+  const next = Number(slider.value) + ((now - previousFrame) / 1000) * baseRate * speed;
   previousFrame = now;
   if (next >= duration) {
     setPlaying(false);
