@@ -366,7 +366,7 @@ function metricChart(spec) {
     swatch.style.backgroundColor = s.color;
     const text = document.createTextNode("");
     item.append(swatch, text);
-    readout.append(item);
+    if (spec.stacked) readout.prepend(item); else readout.append(item);
     return text;
   });
 
@@ -438,21 +438,20 @@ async function loadMetrics() {
   const usage = seriesOf(cpu && cpu.usage);
   if (usage) {
     metricSpecs.push({ title: "CPU 使用率", unit: "%", dt: usage.dt, stacked: true, yMax: 100,
-      series: ["user", "system", "iowait"].map((name, i) => ({ name, color: palette[i], values: usage.series[name] })) });
+      series: [["iowait", 2], ["system", 1], ["user", 0]].map(([name, c]) => ({ name, color: palette[c], values: usage.series[name] })) });
   }
 
   const mem = seriesOf(memory && memory.meminfo);
   if (mem) {
     const s = mem.series;
     const pct = (v, t) => (v === null || !t ? null : (v / t) * 100);
-    const part = key => s.total_kb.map((t, i) => (s[key][i] === null ? null : pct(s[key][i], t)));
+    const cache = s.total_kb.map((t, i) => (s.buffers_kb[i] === null || s.cached_kb[i] === null ? null : pct(s.buffers_kb[i] + s.cached_kb[i], t)));
     const used = s.total_kb.map((t, i) => [s.free_kb[i], s.buffers_kb[i], s.cached_kb[i]].includes(null)
       ? null : pct(t - s.free_kb[i] - s.buffers_kb[i] - s.cached_kb[i], t));
     const swap = s.swap_total_kb.map((t, i) => (t === null || s.swap_free_kb[i] === null ? null : t ? pct(t - s.swap_free_kb[i], t) : 0));
-    metricSpecs.push({ title: "メモリ (積み上げ: 空き以外)", unit: "%", dt: mem.dt, digits: 1, yMax: 100, stacked: true, series: [
-      { name: "使用", color: palette[0], values: used },
-      { name: "buffers", color: palette[1], values: part("buffers_kb") },
-      { name: "キャッシュ", color: palette[3], values: part("cached_kb") },
+    metricSpecs.push({ title: "メモリ使用率", unit: "%", dt: mem.dt, digits: 1, yMax: 100, stacked: true, series: [
+      { name: "使用中(ユーザー + カーネル)", color: palette[0], values: used },
+      { name: "カーネルのキャッシュ", color: palette[3], values: cache },
     ] });
     metricSpecs.push({ title: "swap使用 (swap総量比)", unit: "%", dt: mem.dt, digits: 1, yMax: 100, series: [
       { name: "swap", color: palette[2], values: swap },
