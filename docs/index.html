@@ -8,11 +8,14 @@
     :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10141c; color: #e8edf5; }
     body { margin: 0; padding: 28px; }
     main { max-width: 1440px; margin: auto; }
-    .title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .title-row { display: flex; align-items: flex-start; gap: 12px 24px; flex-wrap: wrap; }
+    .title-row h1 { margin-right: auto; }
+    .speed-rows { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
     .speed { display: flex; align-items: center; gap: 4px; }
     .speed-label { color: #9eacc0; font-size: .8rem; margin-right: 4px; }
     .speed button { min-width: 52px; padding: 5px 8px; font-size: .8rem; background: #263448; }
     .speed button:hover { background: #33476a; }
+    .speed button:disabled { opacity: .4; cursor: default; background: #263448; }
     .speed button[aria-pressed="true"] { background: #3b82f6; }
     h1 { margin: 0 0 6px; font-size: clamp(1.35rem, 3vw, 2rem); }
     .subhead, .meta { color: #9eacc0; }
@@ -73,13 +76,23 @@
 <main>
   <div class="title-row">
     <h1>Yocto ビルド: 個別タスク時間レース</h1>
-    <div class="speed" role="group" aria-label="再生速度">
-      <span class="speed-label">速度</span>
-      <button type="button" data-speed="0.25">x0.25</button>
-      <button type="button" data-speed="0.5">x0.5</button>
-      <button type="button" data-speed="1" aria-pressed="true">x1</button>
-      <button type="button" data-speed="2">x2</button>
-      <button type="button" data-speed="4">x4</button>
+    <div class="speed-rows">
+      <div class="speed" role="group" aria-label="グラフの縦サイズ">
+        <span class="speed-label">拡大</span>
+        <button type="button" data-zoom="0.25">x0.25</button>
+        <button type="button" data-zoom="0.5">x0.5</button>
+        <button type="button" data-zoom="1" aria-pressed="true">x1</button>
+        <button type="button" data-zoom="2">x2</button>
+        <button type="button" data-zoom="4">x4</button>
+      </div>
+      <div class="speed" role="group" aria-label="再生速度">
+        <span class="speed-label">速度</span>
+        <button type="button" data-speed="0.25">x0.25</button>
+        <button type="button" data-speed="0.5">x0.5</button>
+        <button type="button" data-speed="1" aria-pressed="true">x1</button>
+        <button type="button" data-speed="2">x2</button>
+        <button type="button" data-speed="4">x4</button>
+      </div>
     </div>
   </div>
   <div class="meta" id="meta"></div>
@@ -273,9 +286,11 @@ function draw(time) {
 }
 
 const metricCharts = [];
+const metricSpecs = [];
+let metricZoom = 1;
 function metricChart(spec) {
-  const W = 1400, H = 62, m = { l: 0, r: 0, t: 4, b: 14 };
-  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const W = 1400, m = { l: 0, r: 0, t: 4, b: 14 };
+  const pw = W - m.l - m.r, ph = 44 * metricZoom, H = ph + m.t + m.b;
   const host = document.createElement("div");
   host.className = "metric";
   const title = document.createElement("h2");
@@ -404,7 +419,7 @@ async function loadMetrics() {
 
   const usage = seriesOf(cpu && cpu.usage);
   if (usage) {
-    metricChart({ title: "CPU 使用率", unit: "%", dt: usage.dt, stacked: true, yMax: 100,
+    metricSpecs.push({ title: "CPU 使用率", unit: "%", dt: usage.dt, stacked: true, yMax: 100,
       series: ["user", "system", "iowait"].map((name, i) => ({ name, color: palette[i], values: usage.series[name] })) });
   }
 
@@ -415,7 +430,7 @@ async function loadMetrics() {
     const used = s.total_kb.map((t, i) => [t, s.free_kb[i], s.buffers_kb[i], s.cached_kb[i]].includes(null)
       ? null : (t - s.free_kb[i] - s.buffers_kb[i] - s.cached_kb[i]) / GB);
     const swap = s.swap_total_kb.map((t, i) => (t === null || s.swap_free_kb[i] === null ? null : (t - s.swap_free_kb[i]) / GB));
-    metricChart({ title: "メモリ", unit: "GiB", dt: mem.dt, digits: 2, series: [
+    metricSpecs.push({ title: "メモリ", unit: "GiB", dt: mem.dt, digits: 2, series: [
       { name: "使用", color: palette[0], values: used },
       { name: "キャッシュ", color: palette[3], values: scale(s.cached_kb, v => v / GB) },
       { name: "swap使用", color: palette[2], values: swap },
@@ -424,18 +439,34 @@ async function loadMetrics() {
 
   const free = disk && disk.free ? Object.entries(disk.free).filter(([, b]) => b && b.series) : [];
   if (free.length) {
-    metricChart({ title: "ディスク空き容量", unit: "GiB", dt: free[0][1].dt, digits: 1,
+    metricSpecs.push({ title: "ディスク空き容量", unit: "GiB", dt: free[0][1].dt, digits: 1,
       series: free.map(([dev, b], i) => ({ name: dev, color: palette[i % palette.length], values: scale(b.series.free_bytes, v => v / 2 ** 30) })) });
   }
 
   const pressure = [["cpu", cpu && cpu.pressure], ["memory", memory && memory.pressure], ["io", disk && disk.pressure]]
     .filter(([, p]) => seriesOf(p));
   if (pressure.length) {
-    metricChart({ title: "資源競合: CPU / メモリ / I/O 待ち", unit: "%", dt: pressure[0][1].dt, digits: 1,
+    metricSpecs.push({ title: "資源競合: CPU / メモリ / I/O 待ち", unit: "%", dt: pressure[0][1].dt, digits: 1,
       series: pressure.map(([name, p], i) => ({ name, color: palette[i], values: p.series.avg10 })) });
   }
+  renderMetrics();
+}
+
+function renderMetrics() {
+  document.getElementById("metrics").replaceChildren();
+  metricCharts.length = 0;
+  metricSpecs.forEach(metricChart);
   alignMetrics();
   metricCharts.forEach(chart => chart.update(Number(slider.value)));
+}
+for (const button of document.querySelectorAll(".speed button[data-zoom]")) {
+  button.addEventListener("click", () => {
+    metricZoom = Number(button.dataset.zoom);
+    for (const other of document.querySelectorAll(".speed button[data-zoom]")) {
+      other.setAttribute("aria-pressed", String(other === button));
+    }
+    renderMetrics();
+  });
 }
 
 let playing = false;
@@ -443,10 +474,10 @@ let animation;
 let previousFrame = 0;
 const baseRate = duration / 45;
 let speed = 1;
-for (const button of document.querySelectorAll(".speed button")) {
+for (const button of document.querySelectorAll(".speed button[data-speed]")) {
   button.addEventListener("click", () => {
     speed = Number(button.dataset.speed);
-    for (const other of document.querySelectorAll(".speed button")) {
+    for (const other of document.querySelectorAll(".speed button[data-speed]")) {
       other.setAttribute("aria-pressed", String(other === button));
     }
   });
