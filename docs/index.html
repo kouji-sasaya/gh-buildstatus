@@ -22,9 +22,12 @@
     svg { display: block; width: 100%; height: auto; }
     .legend { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0; padding: 8px 0 8px 10px; border-left: 1px solid #283244; color: #c5d0df; font-size: .72rem; line-height: 1.1; }
     .legend-title { color: #9eacc0; font-weight: 600; }
-    .legend-item { display: inline-flex; align-items: center; gap: 5px; padding: 3px 5px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: inherit; font: inherit; line-height: 1.1; text-align: left; cursor: pointer; }
-    .legend-item:hover, .legend-item:focus-visible { border-color: #60738f; background: #222c3a; outline: none; }
-    .legend-item[aria-pressed="true"] { border-color: #8ca6c8; background: #263448; }
+    .legend-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+    .legend-actions button { padding: 3px 6px; font-size: .7rem; background: #263448; }
+    .legend-actions button:hover { background: #33476a; }
+    .legend-item { display: inline-flex; align-items: center; gap: 5px; padding: 3px 5px; border: 1px solid transparent; border-radius: 5px; color: inherit; line-height: 1.1; cursor: pointer; }
+    .legend-item:hover { border-color: #60738f; background: #222c3a; }
+    .legend-item input { margin: 0; accent-color: #3b82f6; cursor: pointer; }
     .legend-swatch { flex: 0 0 10px; width: 10px; height: 10px; border-radius: 3px; }
     .grid { stroke: #2a3445; stroke-width: 1; }
     .axis-label { fill: #8f9db1; font-size: 13px; }
@@ -133,7 +136,7 @@ const maxBars = 100;
 const plot = { left: 330, top: 53, width: 680, row: 16 };
 const chartHeight = plot.top + maxBars * plot.row + 30;
 const ns = "http://www.w3.org/2000/svg";
-let selectedTask = null;
+const enabledTasks = new Set(taskTypes);
 svg.setAttribute("viewBox", `0 0 1100 ${chartHeight}`);
 slider.max = String(duration);
 const gridLayer = el("g", {});
@@ -180,29 +183,39 @@ function el(tag, attrs, text) {
 }
 
 const legend = document.getElementById("legend");
+const legendChecks = new Map();
+function setAllTasks(checked) {
+  for (const [task, box] of legendChecks) {
+    box.checked = checked;
+    enabledTasks[checked ? "add" : "delete"](task);
+  }
+  draw(Number(slider.value));
+}
+const legendActions = document.createElement("div");
+legendActions.className = "legend-actions";
+for (const [text, checked] of [["すべて選択", true], ["すべて解除", false]]) {
+  const action = document.createElement("button");
+  action.type = "button";
+  action.textContent = text;
+  action.addEventListener("click", () => setAllTasks(checked));
+  legendActions.append(action);
+}
+legend.append(legendActions);
 for (const task of taskTypes) {
-  const item = document.createElement("button");
+  const item = document.createElement("label");
   item.className = "legend-item";
-  item.type = "button";
-  item.setAttribute("aria-pressed", "false");
-  item.setAttribute("aria-label", `${task} のバーを強調`);
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = true;
+  box.addEventListener("change", () => {
+    enabledTasks[box.checked ? "add" : "delete"](task);
+    draw(Number(slider.value));
+  });
+  legendChecks.set(task, box);
   const swatch = document.createElement("span");
   swatch.className = "legend-swatch";
   swatch.style.backgroundColor = colorFor(task);
-  item.append(swatch, document.createTextNode(task));
-  item.addEventListener("click", () => {
-    selectedTask = selectedTask === task ? null : task;
-    for (const legendItem of legend.querySelectorAll(".legend-item")) {
-      const selected = legendItem.textContent === selectedTask;
-      legendItem.setAttribute("aria-pressed", String(selected));
-      legendItem.setAttribute("aria-label", selected
-        ? `${selectedTask} の強調を解除`
-        : `${legendItem.textContent} のバーを強調`);
-    }
-    for (const row of barRows.values()) {
-      row.group.setAttribute("opacity", selectedTask && row.task !== selectedTask ? "0.14" : "1");
-    }
-  });
+  item.append(box, swatch, document.createTextNode(task));
   legend.append(item);
 }
 
@@ -215,7 +228,7 @@ function draw(time) {
     } else if (time > event.startTime && event.time > event.startTime) {
       contribution = event.duration * (time - event.startTime) / (event.time - event.startTime);
     }
-    if (contribution > 0) {
+    if (contribution > 0 && enabledTasks.has(event.task)) {
       totals.set(taskKey(event), contribution);
     }
   }
@@ -247,7 +260,7 @@ function draw(time) {
       barRows.set(key, row);
     }
     row.group.setAttribute("transform", `translate(0 ${y})`);
-    row.group.setAttribute("opacity", selectedTask && event.task !== selectedTask ? "0.14" : "1");
+    row.group.setAttribute("opacity", "1");
     row.bar.setAttribute("width", String(width));
     row.amount.setAttribute("x", String(plot.left + width + 9));
     row.amount.textContent = `${value.toFixed(1)} 秒`;
