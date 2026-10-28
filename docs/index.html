@@ -444,14 +444,18 @@ async function loadMetrics() {
   const mem = seriesOf(memory && memory.meminfo);
   if (mem) {
     const s = mem.series;
-    const GB = 1048576;
-    const used = s.total_kb.map((t, i) => [t, s.free_kb[i], s.buffers_kb[i], s.cached_kb[i]].includes(null)
-      ? null : (t - s.free_kb[i] - s.buffers_kb[i] - s.cached_kb[i]) / GB);
-    const swap = s.swap_total_kb.map((t, i) => (t === null || s.swap_free_kb[i] === null ? null : (t - s.swap_free_kb[i]) / GB));
-    metricSpecs.push({ title: "メモリ", unit: "GiB", dt: mem.dt, digits: 2, series: [
+    const pct = (v, t) => (v === null || !t ? null : (v / t) * 100);
+    const part = key => s.total_kb.map((t, i) => (s[key][i] === null ? null : pct(s[key][i], t)));
+    const used = s.total_kb.map((t, i) => [s.free_kb[i], s.buffers_kb[i], s.cached_kb[i]].includes(null)
+      ? null : pct(t - s.free_kb[i] - s.buffers_kb[i] - s.cached_kb[i], t));
+    const swap = s.swap_total_kb.map((t, i) => (t === null || s.swap_free_kb[i] === null ? null : t ? pct(t - s.swap_free_kb[i], t) : 0));
+    metricSpecs.push({ title: "メモリ (積み上げ: 空き以外)", unit: "%", dt: mem.dt, digits: 1, yMax: 100, stacked: true, series: [
       { name: "使用", color: palette[0], values: used },
-      { name: "キャッシュ", color: palette[3], values: scale(s.cached_kb, v => v / GB) },
-      { name: "swap使用", color: palette[2], values: swap },
+      { name: "buffers", color: palette[1], values: part("buffers_kb") },
+      { name: "キャッシュ", color: palette[3], values: part("cached_kb") },
+    ] });
+    metricSpecs.push({ title: "swap使用 (swap総量比)", unit: "%", dt: mem.dt, digits: 1, yMax: 100, series: [
+      { name: "swap", color: palette[2], values: swap },
     ] });
   }
 
