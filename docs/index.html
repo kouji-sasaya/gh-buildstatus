@@ -54,7 +54,8 @@
     .note { color: #9eacc0; font-size: .9rem; line-height: 1.55; }
     .metrics { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-bottom: 12px; }
     .metric { min-width: 0; padding: 4px 0 2px; border: 1px solid #283244; border-radius: 10px; background: #151b26; }
-    .metric-head { display: flex; align-items: baseline; gap: 16px; padding: 0 10px; }
+    .metric-head { display: flex; align-items: baseline; gap: 8px 16px; padding: 0 10px; cursor: pointer; user-select: none; }
+    .metric-fold { color: #8f9db1; font-size: .7rem; width: 1em; }
     .metric h2 { margin: 0; font-size: .8rem; color: #c5d0df; white-space: nowrap; }
     .metric-readout { display: flex; flex-wrap: wrap; gap: 4px 12px; color: #c5d0df; font-size: .72rem; font-variant-numeric: tabular-nums; }
     .metric-readout i { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 2px; }
@@ -290,6 +291,7 @@ function draw(time) {
 const metricCharts = [];
 const metricSpecs = [];
 let metricZoom = 1;
+const collapsedMetrics = new Set();
 function metricChart(spec) {
   const W = 1400, m = { l: 0, r: 0, t: 4, b: 14 };
   const pw = W - m.l - m.r, ph = 44 * metricZoom, H = ph + m.t + m.b;
@@ -303,7 +305,21 @@ function metricChart(spec) {
   box.style.overflow = "visible";
   const head = document.createElement("div");
   head.className = "metric-head";
+  const fold = document.createElement("span");
+  fold.className = "metric-fold";
+  head.prepend(fold);
   head.append(title, readout);
+  const applyFold = () => {
+    const closed = collapsedMetrics.has(spec.title);
+    box.style.display = closed ? "none" : "";
+    fold.textContent = closed ? "▶" : "▼";
+    head.setAttribute("aria-expanded", String(!closed));
+  };
+  head.addEventListener("click", () => {
+    if (!collapsedMetrics.delete(spec.title)) collapsedMetrics.add(spec.title);
+    applyFold();
+  });
+  applyFold();
   host.append(head, box);
   document.getElementById("metrics").append(host);
 
