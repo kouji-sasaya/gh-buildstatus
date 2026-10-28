@@ -114,7 +114,7 @@ const slider = document.getElementById("timeline");
 const toggle = document.getElementById("toggle");
 const clock = document.getElementById("clock");
 const maxBars = 100;
-const plot = { left: 330, top: 53, width: 680, row: 22.5 };
+const plot = { left: 330, top: 53, width: 680, row: 16 };
 const chartHeight = plot.top + maxBars * plot.row + 30;
 const ns = "http://www.w3.org/2000/svg";
 let selectedTask = null;
@@ -221,10 +221,10 @@ function draw(time) {
       const group = el("g", { class: "bar-row", opacity: "0" });
       const fullLabel = `${event.task} · ${event.recipe}`;
       const labelText = fullLabel.length > 48 ? `${fullLabel.slice(0, 47)}…` : fullLabel;
-      const label = el("text", { x: plot.left - 12, y: 13, "text-anchor": "end", class: "task-label" }, labelText);
+      const label = el("text", { x: plot.left - 12, y: 11, "text-anchor": "end", class: "task-label" }, labelText);
       label.append(el("title", {}, `${event.recipeId} / ${event.task}`));
-      const bar = el("rect", { x: plot.left, y: 0, width: 0, height: 15, fill: colorFor(event.task), class: "bar" });
-      const amount = el("text", { x: plot.left + 9, y: 13, class: "value-label" }, "");
+      const bar = el("rect", { x: plot.left, y: 0, width: 0, height: 11, fill: colorFor(event.task), class: "bar" });
+      const amount = el("text", { x: plot.left + 9, y: 11, class: "value-label" }, "");
       group.append(label, bar, amount);
       barsLayer.append(group);
       row = { group, bar, label, amount, task: event.task };
@@ -402,7 +402,7 @@ async function loadMetrics() {
   const pressure = [["cpu", cpu && cpu.pressure], ["memory", memory && memory.pressure], ["io", disk && disk.pressure]]
     .filter(([, p]) => seriesOf(p));
   if (pressure.length) {
-    metricChart({ title: "PSI 負荷 (avg10)", unit: "%", dt: pressure[0][1].dt, digits: 1,
+    metricChart({ title: "資源競合: CPU / メモリ / I/O 待ち", unit: "%", dt: pressure[0][1].dt, digits: 1,
       series: pressure.map(([name, p], i) => ({ name, color: palette[i], values: p.series.avg10 })) });
   }
   alignMetrics();
