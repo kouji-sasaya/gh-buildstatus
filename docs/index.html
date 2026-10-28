@@ -438,7 +438,7 @@ async function loadMetrics() {
   const usage = seriesOf(cpu && cpu.usage);
   if (usage) {
     metricSpecs.push({ title: "CPU 使用率", unit: "%", dt: usage.dt, stacked: true, yMax: 100,
-      series: [["iowait", 2], ["system", 1], ["user", 0]].map(([name, c]) => ({ name, color: palette[c], values: usage.series[name] })) });
+      series: [["iowait", 2], ["system", 1], ["user", 0]].map(([name, c]) => ({ name: name === "system" ? "kernel" : name, color: palette[c], values: usage.series[name] })) });
   }
 
   const mem = seriesOf(memory && memory.meminfo);
@@ -450,8 +450,8 @@ async function loadMetrics() {
       ? null : pct(t - s.free_kb[i] - s.buffers_kb[i] - s.cached_kb[i], t));
     const swap = s.swap_total_kb.map((t, i) => (t === null || s.swap_free_kb[i] === null ? null : t ? pct(t - s.swap_free_kb[i], t) : 0));
     metricSpecs.push({ title: "メモリ使用率", unit: "%", dt: mem.dt, digits: 1, yMax: 100, stacked: true, series: [
-      { name: "使用中(ユーザー + カーネル)", color: palette[0], values: used },
-      { name: "カーネルのキャッシュ", color: palette[3], values: cache },
+      { name: "kernel cache", color: palette[1], values: cache },
+      { name: "user + kernel", color: palette[0], values: used },
     ] });
     metricSpecs.push({ title: "swap使用 (swap総量比)", unit: "%", dt: mem.dt, digits: 1, yMax: 100, series: [
       { name: "swap", color: palette[2], values: swap },
