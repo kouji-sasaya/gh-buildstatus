@@ -26,7 +26,10 @@
     .value-label { fill: #d8e1ed; font-size: 11px; font-variant-numeric: tabular-nums; }
     .bar { rx: 5; }
     .bar-row { transition: transform .22s ease, opacity .22s ease; }
-    .controls { display: flex; align-items: center; gap: 14px; margin: 18px 0 12px; }
+    .controls { display: flex; align-items: center; gap: 14px; margin: 10px 0 4px; }
+    .controls button { min-width: 96px; }
+    .timeline-row { margin: 0 0 12px; }
+    .timeline-row input[type=range] { display: block; width: 100%; }
     button { border: 0; border-radius: 8px; padding: 9px 15px; background: #3b82f6; color: white; font: inherit; cursor: pointer; }
     button:hover { background: #5594ff; }
     input[type=range] { flex: 1; min-width: 100px; height: 18px; margin: 0; appearance: none; background: transparent; cursor: pointer; }
@@ -35,11 +38,11 @@
     input[type=range]::-moz-range-progress { height: 8px; border-radius: 999px; background: #60a5fa; }
     input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -4px; appearance: none; border: 2px solid #e8edf5; border-radius: 50%; background: #3b82f6; }
     input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 2px solid #e8edf5; border-radius: 50%; background: #3b82f6; }
-    .clock { min-width: 175px; text-align: right; font-variant-numeric: tabular-nums; color: #c5d0df; }
+    .clock { text-align: left; font-variant-numeric: tabular-nums; color: #c5d0df; }
     .note { color: #9eacc0; font-size: .9rem; line-height: 1.55; }
     .metrics { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-bottom: 12px; }
-    .metric { min-width: 0; padding: 4px 10px 2px; border: 1px solid #283244; border-radius: 10px; background: #151b26; }
-    .metric-head { display: flex; align-items: baseline; gap: 16px; }
+    .metric { min-width: 0; padding: 4px 0 2px; border: 1px solid #283244; border-radius: 10px; background: #151b26; }
+    .metric-head { display: flex; align-items: baseline; gap: 16px; padding: 0 10px; }
     .metric h2 { margin: 0; font-size: .8rem; color: #c5d0df; white-space: nowrap; }
     .metric-readout { display: flex; flex-wrap: wrap; gap: 4px 12px; color: #c5d0df; font-size: .72rem; font-variant-numeric: tabular-nums; }
     .metric-readout i { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 2px; }
@@ -52,9 +55,7 @@
     }
     @media (max-width: 650px) {
       body { padding: 16px; }
-      .controls { flex-wrap: wrap; gap: 10px; }
-      input[type=range] { order: 3; flex-basis: 100%; }
-      .clock { margin-left: auto; }
+      .controls { gap: 10px; }
       .task-label { font-size: 10px; }
     }
   </style>
@@ -65,8 +66,10 @@
   <div class="meta" id="meta"></div>
   <div class="controls">
     <button id="toggle" type="button">再生</button>
-    <input id="timeline" type="range" min="0" step="any" value="0" aria-label="ビルド経過時間">
     <div class="clock" id="clock"></div>
+  </div>
+  <div class="timeline-row">
+    <input id="timeline" type="range" min="0" step="any" value="0" aria-label="ビルド経過時間">
   </div>
   <section class="metrics" id="metrics" aria-label="ホストのリソース使用状況"></section>
   <div class="chart-layout">
