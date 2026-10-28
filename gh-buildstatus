@@ -5,7 +5,10 @@ usage() {
 Usage:
   gh buildstatus raw2json --input <buildstatus dir> --output <json file>
 
-Convert Yocto buildstats raw task records to bar-chart-race JSON.
+  gh buildstatus timeseries --input <build dir> --output <dir> [--only cpu,memory,disk,net] [--interval <sec>] [--gzip]
+
+raw2json:   Convert Yocto buildstats raw task records to bar-chart-race JSON.
+timeseries: Convert host monitor logs (CPU/memory/disk/net) to per-metric time-series JSON.
 EOF
 }
 
@@ -21,6 +24,10 @@ case "$command_name" in
     raw2json)
         script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
         exec python3 "$script_dir/commands/bar-chart-race.py" "$@"
+        ;;
+    timeseries)
+        script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
+        exec python3 "$script_dir/commands/buildstats-timeseries.py" "$@"
         ;;
     -h|--help)
         usage

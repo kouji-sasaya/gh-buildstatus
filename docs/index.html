@@ -37,6 +37,15 @@
     input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 2px solid #e8edf5; border-radius: 50%; background: #3b82f6; }
     .clock { min-width: 175px; text-align: right; font-variant-numeric: tabular-nums; color: #c5d0df; }
     .note { color: #9eacc0; font-size: .9rem; line-height: 1.55; }
+    .metrics { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-bottom: 12px; }
+    .metric { min-width: 0; padding: 4px 10px 2px; border: 1px solid #283244; border-radius: 10px; background: #151b26; }
+    .metric-head { display: flex; align-items: baseline; gap: 16px; }
+    .metric h2 { margin: 0; font-size: .8rem; color: #c5d0df; white-space: nowrap; }
+    .metric-readout { display: flex; flex-wrap: wrap; gap: 4px 12px; color: #c5d0df; font-size: .72rem; font-variant-numeric: tabular-nums; }
+    .metric-readout i { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 2px; }
+    .metric .tick { fill: #8f9db1; font-size: 10px; }
+    .metric .cursor { stroke: #e8edf5; stroke-width: 1; stroke-dasharray: 3 3; }
+    @media (max-width: 800px) { .metrics { grid-template-columns: minmax(0, 1fr); } }
     @media (max-width: 800px) {
       .chart-layout { grid-template-columns: minmax(0, 1fr); }
       .legend { flex-direction: row; flex-wrap: wrap; padding: 10px; border-left: 0; border-top: 1px solid #283244; }
@@ -53,15 +62,13 @@
 <body>
 <main>
   <h1>Yocto ビルド: 個別タスク時間レース</h1>
-  <div class="subhead">
-    各レシピの個別タスク実行時間を比較します。各バーは do_compile などのタスクです。実行中タスクは開始から完了まで線形補間して表示し、横軸は全タスク中の最長時間に固定しています。上位100件を表示します。ビルド: 20261020142538
-  </div>
   <div class="meta" id="meta"></div>
   <div class="controls">
     <button id="toggle" type="button">再生</button>
     <input id="timeline" type="range" min="0" step="any" value="0" aria-label="ビルド経過時間">
     <div class="clock" id="clock"></div>
   </div>
+  <section class="metrics" id="metrics" aria-label="ホストのリソース使用状況"></section>
   <div class="chart-layout">
     <div class="chart">
       <svg id="chart" viewBox="0 0 1100 650" role="img" aria-label="個別タスク実行時間のバーチャートレース"></svg>
@@ -72,13 +79,17 @@
   </div>
 </main>
 <script>
-fetch("bar_chart_race.json")
-  .then(response => {
+const dataBase = `buildstatus/${new URLSearchParams(location.search).get("target") || "raspberry"}/`;
+function fetchJson(url) {
+  return fetch(url).then(response => {
     if (!response.ok) {
-      throw new Error(`データ読み込み失敗: HTTP ${response.status}`);
+      throw new Error(`データ読み込み失敗: ${url} HTTP ${response.status}`);
     }
     return response.json();
-  })
+  });
+}
+fetchJson(`${dataBase}bar_chart_race.json`)
+  .catch(() => fetchJson("bar_chart_race.json"))
   .then(DATA => {
 const events = DATA.events;
 const duration = DATA.metadata.duration;
@@ -225,7 +236,174 @@ function draw(time) {
   clock.textContent = `ビルド経過 ${formatTime(time)} / ${formatTime(duration)}`;
   slider.value = String(time);
   slider.style.setProperty("--progress", `${(time / duration) * 100}%`);
+  metricCharts.forEach(chart => chart.update(time));
   updateToggleLabel();
+}
+
+const metricCharts = [];
+function metricChart(spec) {
+  const W = 1400, H = 62, m = { l: 0, r: 0, t: 4, b: 14 };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const host = document.createElement("div");
+  host.className = "metric";
+  const title = document.createElement("h2");
+  title.textContent = `${spec.title} (${spec.unit})`;
+  const readout = document.createElement("div");
+  readout.className = "metric-readout";
+  const box = el("svg", { viewBox: `0 0 ${W} ${H}` });
+  box.style.overflow = "visible";
+  const head = document.createElement("div");
+  head.className = "metric-head";
+  head.append(title, readout);
+  host.append(head, box);
+  document.getElementById("metrics").append(host);
+
+  const dt = spec.dt;
+  const count = spec.series[0].values.length;
+  let tops = spec.series.map(s => s.values);
+  if (spec.stacked) {
+    const acc = [];
+    tops = tops.map(values => values.map((v, i) => {
+      acc[i] = (acc[i] || 0) + (v ?? 0);
+      return acc[i];
+    }));
+  }
+  const dataMax = Math.max(0, ...tops.flat().filter(v => v !== null));
+  const yMax = spec.yMax ?? (dataMax > 0 ? dataMax * 1.1 : 1);
+  const x = t => m.l + Math.min(1, t / duration) * pw;
+  const y = v => m.t + ph - (Math.max(0, v) / yMax) * ph;
+  for (let i = 0; i <= 2; i++) {
+    const gy = m.t + (ph * i) / 2;
+    box.append(el("line", { x1: m.l, x2: W - m.r, y1: gy, y2: gy, class: "grid" }));
+    box.append(el("text", { x: m.l + 3, y: gy + (i === 0 ? 10 : i === 2 ? -3 : 3), class: "tick" },
+      (yMax * (2 - i) / 2).toFixed(yMax >= 10 ? 0 : 1)));
+  }
+  const steps = [60, 300, 600, 900, 1800, 3600];
+  const vStep = steps.find(step => duration / step <= 12) ?? 3600;
+  for (let t = 0; t <= duration; t += vStep) {
+    box.append(el("line", { x1: x(t), x2: x(t), y1: m.t, y2: m.t + ph, class: "grid" }));
+    box.append(el("text", { x: x(t), y: H - 3, "text-anchor": t === 0 ? "start" : "middle", class: "tick" }, formatTime(t)));
+  }
+
+  const paths = spec.series.map(s => {
+    const path = spec.stacked
+      ? el("path", { fill: s.color, opacity: "0.85" })
+      : el("path", { fill: "none", stroke: s.color, "stroke-width": "1.5" });
+    box.append(path);
+    return path;
+  });
+  const cursor = el("line", { y1: m.t, y2: m.t + ph, class: "cursor" });
+  box.append(cursor);
+
+  const fields = spec.series.map(s => {
+    const item = document.createElement("span");
+    const swatch = document.createElement("i");
+    swatch.style.backgroundColor = s.color;
+    const text = document.createTextNode("");
+    item.append(swatch, text);
+    readout.append(item);
+    return text;
+  });
+
+  metricCharts.push({ host, box, update: time => {
+    const cur = Math.max(0, Math.min(count - 1, Math.floor(time / dt)));
+    const times = [];
+    const idx = [];
+    for (let i = 0; i <= cur; i++) {
+      const t = (i + 0.5) * dt;
+      if (t > time) break;
+      times.push(t);
+      idx.push(i);
+    }
+    times.push(time);
+    idx.push(cur);
+
+    spec.series.forEach((s, k) => {
+      let d = "";
+      if (spec.stacked) {
+        const lower = k ? tops[k - 1] : null;
+        const up = idx.map((i, n) => `${n ? "L" : "M"}${x(times[n]).toFixed(1)} ${y(tops[k][i]).toFixed(1)}`);
+        const down = idx.map((i, n) => `L${x(times[n]).toFixed(1)} ${y(lower ? lower[i] : 0).toFixed(1)}`).reverse();
+        d = up.join("") + down.join("") + "Z";
+      } else {
+        let pen = false;
+        idx.forEach((i, n) => {
+          const v = s.values[i];
+          if (v === null) { pen = false; return; }
+          d += `${pen ? "L" : "M"}${x(times[n]).toFixed(1)} ${y(v).toFixed(1)}`;
+          pen = true;
+        });
+      }
+      paths[k].setAttribute("d", d);
+      const v = s.values[cur];
+      fields[k].textContent = `${s.name} ${v === null || v === undefined ? "-" : v.toFixed(spec.digits ?? 1)}`;
+    });
+    cursor.setAttribute("x1", x(time).toFixed(1));
+    cursor.setAttribute("x2", x(time).toFixed(1));
+  } });
+}
+
+// Align each chart's time axis with the slider thumb's travel range.
+function alignMetrics() {
+  const thumbRadius = 8;
+  const sliderRect = slider.getBoundingClientRect();
+  for (const { host, box } of metricCharts) {
+    const rect = host.getBoundingClientRect();
+    const style = getComputedStyle(host);
+    const contentLeft = rect.left + host.clientLeft + parseFloat(style.paddingLeft);
+    const contentRight = rect.right - host.clientLeft - parseFloat(style.paddingRight);
+    const left = Math.max(0, sliderRect.left + thumbRadius - contentLeft);
+    const right = Math.min(contentRight - contentLeft, sliderRect.right - thumbRadius - contentLeft);
+    box.style.marginLeft = `${left}px`;
+    box.style.width = `${Math.max(1, right - left)}px`;
+  }
+}
+window.addEventListener("resize", alignMetrics);
+
+function seriesOf(block) {
+  return block && block.series ? { dt: block.dt, series: block.series } : null;
+}
+
+async function loadMetrics() {
+  const load = name => fetchJson(`${dataBase}${name}.json`).catch(() => null);
+  const [cpu, memory, disk] = await Promise.all([load("cpu"), load("memory"), load("disk")]);
+  const scale = (values, f) => values.map(v => (v === null ? null : f(v)));
+  const palette = ["#60a5fa", "#f59e0b", "#ef4444", "#34d399", "#a78bfa"];
+
+  const usage = seriesOf(cpu && cpu.usage);
+  if (usage) {
+    metricChart({ title: "CPU 使用率", unit: "%", dt: usage.dt, stacked: true, yMax: 100,
+      series: ["user", "system", "iowait"].map((name, i) => ({ name, color: palette[i], values: usage.series[name] })) });
+  }
+
+  const mem = seriesOf(memory && memory.meminfo);
+  if (mem) {
+    const s = mem.series;
+    const GB = 1048576;
+    const used = s.total_kb.map((t, i) => [t, s.free_kb[i], s.buffers_kb[i], s.cached_kb[i]].includes(null)
+      ? null : (t - s.free_kb[i] - s.buffers_kb[i] - s.cached_kb[i]) / GB);
+    const swap = s.swap_total_kb.map((t, i) => (t === null || s.swap_free_kb[i] === null ? null : (t - s.swap_free_kb[i]) / GB));
+    metricChart({ title: "メモリ", unit: "GiB", dt: mem.dt, digits: 2, series: [
+      { name: "使用", color: palette[0], values: used },
+      { name: "キャッシュ", color: palette[3], values: scale(s.cached_kb, v => v / GB) },
+      { name: "swap使用", color: palette[2], values: swap },
+    ] });
+  }
+
+  const free = disk && disk.free ? Object.entries(disk.free).filter(([, b]) => b && b.series) : [];
+  if (free.length) {
+    metricChart({ title: "ディスク空き容量", unit: "GiB", dt: free[0][1].dt, digits: 1,
+      series: free.map(([dev, b], i) => ({ name: dev, color: palette[i % palette.length], values: scale(b.series.free_bytes, v => v / 2 ** 30) })) });
+  }
+
+  const pressure = [["cpu", cpu && cpu.pressure], ["memory", memory && memory.pressure], ["io", disk && disk.pressure]]
+    .filter(([, p]) => seriesOf(p));
+  if (pressure.length) {
+    metricChart({ title: "PSI 負荷 (avg10)", unit: "%", dt: pressure[0][1].dt, digits: 1,
+      series: pressure.map(([name, p], i) => ({ name, color: palette[i], values: p.series.avg10 })) });
+  }
+  alignMetrics();
+  metricCharts.forEach(chart => chart.update(Number(slider.value)));
 }
 
 let playing = false;
@@ -268,6 +446,7 @@ slider.addEventListener("input", () => {
   draw(Number(slider.value));
 });
 draw(0);
+loadMetrics().catch(error => console.error("メトリクスの読み込みに失敗しました:", error));
   })
   .catch(error => {
     console.error("バーチャートレースのデータ読み込みに失敗しました:", error);

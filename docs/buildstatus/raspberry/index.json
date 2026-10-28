@@ -1,0 +1,10 @@
+{
+  "build": "20261027134621",
+  "buildStart": 1793108782.66,
+  "files": {
+    "cpu": "cpu.json",
+    "disk": "disk.json",
+    "memory": "memory.json",
+    "net": "net.json"
+  }
+}
